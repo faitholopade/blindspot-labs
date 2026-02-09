@@ -13,6 +13,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Also try Streamlit secrets (for cloud deployment)
+try:
+    import streamlit as st
+    if "OPENAI_API_KEY" in st.secrets:
+        os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+    if "ANTHROPIC_API_KEY" in st.secrets:
+        os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
+    if "LLM_PROVIDER" in st.secrets:
+        os.environ["LLM_PROVIDER"] = st.secrets["LLM_PROVIDER"]
+except Exception:
+    pass
+
 CHROMA_DIR = Path("chroma_db")
 COLLECTION_NAME = "dublin_planning"
 EMBEDDING_MODEL = "text-embedding-3-small"
