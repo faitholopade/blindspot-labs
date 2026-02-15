@@ -172,11 +172,13 @@ for message in st.session_state.messages:
                     )
 
 # Handle pending question from sidebar
+# Always render chat_input so it never disappears
+prompt = st.chat_input("Ask about Dublin planning applications...")
+
+# Sidebar click takes priority
 if st.session_state.pending_question:
     prompt = st.session_state.pending_question
     st.session_state.pending_question = None
-else:
-    prompt = st.chat_input("Ask about Dublin planning applications...")
 
 # Process user input
 if prompt:
@@ -222,3 +224,5 @@ if prompt:
                 st.session_state.messages.append(
                     {"role": "assistant", "content": error_msg, "sources": []}
                 )
+
+    st.rerun()
