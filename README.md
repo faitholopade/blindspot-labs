@@ -1,5 +1,9 @@
 # Blindspot Labs: Dublin Planning Permission AI Assistant
 
+## 🏆 Awards & Recognition
+- **2nd Place Winner** — [Nomad AI Competition 2025](http://nomadai.ie/events/nomad-ai-competition-2025)
+- **Prize:** €1,500
+
 ## 🏗️ The Strange Data Project — Nomad AI Competition
 
 An AI-powered planning permission assistant for Dublin City that gives LLMs access to data they've never seen: **20+ years of Dublin City Council planning applications, decisions, appeals, and zoning data**.
