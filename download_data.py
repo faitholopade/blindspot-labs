@@ -247,6 +247,55 @@ def clean_and_process_data():
             elif not record['decision']:
                 record['decision'] = 'Pending'
         
+        # ── Land & development classification (public vs private value-add) ──
+        # This classification enables the commercial insight Kevin identified:
+        # public land developments vs private land, and categorisation for
+        # targeted access (developers, solicitors, architects, etc.)
+        proposal_lower = (record['proposal'] or '').lower()
+        location_lower = (record['location'] or '').lower()
+        
+        # Development category
+        if any(kw in proposal_lower for kw in ['dwelling', 'house', 'residential', 'apartment', 'flat', 'duplex']):
+            record['dev_category'] = 'residential'
+        elif any(kw in proposal_lower for kw in ['office', 'commercial', 'retail', 'shop', 'restaurant', 'hotel']):
+            record['dev_category'] = 'commercial'
+        elif any(kw in proposal_lower for kw in ['industrial', 'warehouse', 'factory', 'storage']):
+            record['dev_category'] = 'industrial'
+        elif any(kw in proposal_lower for kw in ['school', 'college', 'university', 'creche', 'childcare']):
+            record['dev_category'] = 'education'
+        elif any(kw in proposal_lower for kw in ['church', 'hospital', 'clinic', 'community', 'public']):
+            record['dev_category'] = 'public_institutional'
+        elif any(kw in proposal_lower for kw in ['extension', 'conversion', 'alteration', 'renovation']):
+            record['dev_category'] = 'modification'
+        elif any(kw in proposal_lower for kw in ['demolition', 'demolish']):
+            record['dev_category'] = 'demolition'
+        else:
+            record['dev_category'] = 'other'
+        
+        # Land type indicator (public vs private land signals)
+        if any(kw in location_lower for kw in ['council', 'public', 'park', 'civic', 'library', 'garda']):
+            record['land_type'] = 'public'
+        elif any(kw in proposal_lower for kw in ['social housing', 'affordable housing', 'council housing', 'part v']):
+            record['land_type'] = 'public_housing'
+        else:
+            record['land_type'] = 'private'
+        
+        # Scale indicator (useful for targeting developers vs homeowners)
+        num_units = record.get('num_units', '')
+        try:
+            units = int(num_units) if num_units else 0
+        except (ValueError, TypeError):
+            units = 0
+        
+        if units >= 50 or any(kw in proposal_lower for kw in ['strategic housing development', 'shd', 'large-scale']):
+            record['dev_scale'] = 'large'
+        elif units >= 10:
+            record['dev_scale'] = 'medium'
+        elif units >= 2:
+            record['dev_scale'] = 'small_multi'
+        else:
+            record['dev_scale'] = 'single'
+        
         # Skip records with no reference
         if not record['ref']:
             continue

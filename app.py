@@ -12,12 +12,8 @@ from pathlib import Path
 # ── Load API keys from Streamlit secrets OR .env file ──────────
 # Streamlit Cloud uses st.secrets; local dev uses .env
 try:
-    if "OPENAI_API_KEY" in st.secrets:
-        os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
     if "ANTHROPIC_API_KEY" in st.secrets:
         os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
-    if "LLM_PROVIDER" in st.secrets:
-        os.environ["LLM_PROVIDER"] = st.secrets["LLM_PROVIDER"]
 except Exception:
     pass  # st.secrets not available (local dev)
 
@@ -68,22 +64,88 @@ with st.sidebar:
     """)
 
     st.divider()
+    st.header("I am a...")
+    user_role = st.radio(
+        "Filter results by your role:",
+        ["Everyone", "Property Developer", "Architect", "Solicitor", "Estate Agent", "Homeowner", "Journalist"],
+        index=0,
+        label_visibility="collapsed",
+    )
+    
+    # Map roles to relevant filters and sample questions
+    role_config = {
+        "Everyone": {
+            "questions": [
+                "What planning applications were submitted in Drumcondra?",
+                "Show me refused applications in Dublin 8",
+                "Any house extensions approved in Rathmines?",
+                "What large developments were proposed in the Docklands?",
+                "Are there appeals for applications in Ranelagh?",
+                "What developments involve demolition in Dublin city centre?",
+            ],
+        },
+        "Property Developer": {
+            "questions": [
+                "What large residential developments were granted in Dublin 1?",
+                "Show me sites where planning was refused — potential opportunity?",
+                "What developments on public or council land were proposed recently?",
+                "How many residential units were approved in the Docklands?",
+            ],
+        },
+        "Architect": {
+            "questions": [
+                "What extensions were granted in Rathmines? Looking for precedent.",
+                "Were any two-storey extensions refused in Dublin 6?",
+                "What conditions are typically attached to house extension permissions?",
+                "Show me applications for change of use in Dublin 2",
+            ],
+        },
+        "Solicitor": {
+            "questions": [
+                "Are there any active appeals for applications in Ranelagh?",
+                "Was planning granted for developments on Griffith Avenue?",
+                "What applications are currently pending in Dublin 4?",
+                "Show me applications with further information requests in Ballsbridge",
+            ],
+        },
+        "Estate Agent": {
+            "questions": [
+                "What developments were approved near Portobello?",
+                "Any large residential schemes proposed in Dublin 8?",
+                "What demolition applications were submitted in the city centre?",
+                "Show me recent granted applications in Phibsborough",
+            ],
+        },
+        "Homeowner": {
+            "questions": [
+                "Were any applications refused near my area in Drumcondra?",
+                "What developments are planned in Stoneybatter?",
+                "Any extensions approved on my street in Glasnevin?",
+                "What appeals were lodged for applications in Cabra?",
+            ],
+        },
+        "Journalist": {
+            "questions": [
+                "What are the most refused areas in Dublin for planning?",
+                "Show me large-scale developments on public land",
+                "What planning applications involve social housing?",
+                "How many applications were appealed in Dublin city centre?",
+            ],
+        },
+    }
+    
+    config = role_config.get(user_role, role_config["Everyone"])
+    
+    st.divider()
     st.header("Sample Questions")
-    sample_questions = [
-        "What planning applications were submitted in Drumcondra?",
-        "Show me refused applications in Dublin 8",
-        "Any house extensions approved in Rathmines?",
-        "What large developments were proposed in the Docklands?",
-        "Are there appeals for applications in Ranelagh?",
-        "What developments involve demolition in Dublin city centre?",
-    ]
-    for q in sample_questions:
+    for q in config["questions"]:
         if st.button(q, key=f"sample_{hash(q)}", use_container_width=True):
             st.session_state.pending_question = q
 
     st.divider()
-    st.markdown("**Blindspot Labs** — The Strange Data Project\nNomad AI Competition 2025")
+    st.markdown("**Blindspot Labs** — The Strange Data Project\nNomad AI Competition 2025 🏆 2nd Place")
     show_sources = st.checkbox("Show retrieved sources", value=False)
+    st.caption("Embeddings: Local (MiniLM) | Generation: Claude")
 
 
 # ── Auto-setup: download data & build DB if needed ─────────────
@@ -91,9 +153,9 @@ with st.sidebar:
 def setup_and_load():
     """Download data, build vector DB, and return the ChromaDB collection."""
     
-    # Check API key
-    if not os.environ.get("OPENAI_API_KEY"):
-        return None, "OPENAI_API_KEY not found. Add it to .env (local) or Streamlit Secrets (cloud)."
+    # Check API key — Anthropic for generation, embeddings are local (no key needed)
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None, "ANTHROPIC_API_KEY not found. Add it to .env (local) or Streamlit Secrets (cloud)."
     
     chroma_dir = Path("chroma_db")
     data_dir = Path("data")
@@ -161,12 +223,15 @@ for message in st.session_state.messages:
         if show_sources and message["role"] == "assistant" and "sources" in message:
             with st.expander("📎 Retrieved Sources", expanded=False):
                 for src in message["sources"]:
+                    cat_badge = f' | <strong>Type:</strong> {src.get("dev_category", "")}' if src.get("dev_category") else ''
+                    land_badge = f' | <strong>Land:</strong> {src.get("land_type", "")}' if src.get("land_type") else ''
                     st.markdown(
                         f'<div class="source-card">'
                         f'<strong>Ref:</strong> {src["ref"]} | '
                         f'<strong>Location:</strong> {src["location"][:80]} | '
                         f'<strong>Decision:</strong> {src["decision"]} | '
                         f'<strong>Relevance:</strong> {src["relevance"]}'
+                        f'{cat_badge}{land_badge}'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
@@ -204,12 +269,15 @@ if prompt:
                 if show_sources and sources:
                     with st.expander("📎 Retrieved Sources", expanded=False):
                         for src in sources:
+                            cat_badge = f' | <strong>Type:</strong> {src.get("dev_category", "")}' if src.get("dev_category") else ''
+                            land_badge = f' | <strong>Land:</strong> {src.get("land_type", "")}' if src.get("land_type") else ''
                             st.markdown(
                                 f'<div class="source-card">'
                                 f'<strong>Ref:</strong> {src["ref"]} | '
                                 f'<strong>Location:</strong> {src["location"][:80]} | '
                                 f'<strong>Decision:</strong> {src["decision"]} | '
                                 f'<strong>Relevance:</strong> {src["relevance"]}'
+                                f'{cat_badge}{land_badge}'
                                 f'</div>',
                                 unsafe_allow_html=True,
                             )

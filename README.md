@@ -6,9 +6,11 @@
 
 ## 🏗️ The Strange Data Project — Nomad AI Competition
 
-An AI-powered planning permission assistant for Dublin City that gives LLMs access to data they've never seen: **20+ years of Dublin City Council planning applications, decisions, appeals, and zoning data**.
+An AI-powered planning permission assistant for Dublin that gives LLMs access to data they've never seen: **20+ years of Dublin City Council planning applications, decisions, appeals, and zoning data** from the Dept. of Housing ArcGIS API.
 
 Baseline models (ChatGPT, Claude, Gemini) hallucinate or refuse when asked about specific Dublin planning applications. **This system answers accurately using real data.**
+
+**Powered by Anthropic Claude.** Embeddings are local (sentence-transformers, no API key needed). Only one key required: `ANTHROPIC_API_KEY`.
 
 ---
 
@@ -52,56 +54,59 @@ Open http://localhost:8501 in your browser.
 
 ---
 
+
 ## How It Works
 
 ```
-Dublin City Council Open Data (CSVs)
-        │
-        ▼
-   download_data.py
-   (Download + Clean + Structure)
-        │
-        ▼
-   build_vectordb.py  
-   (Chunk + Embed + Store in ChromaDB)
-        │
-        ▼
-   rag_engine.py
-   (Query → Retrieve → Augment → Generate)
-        │
-        ▼
-   app.py (Streamlit Chat Interface)
+Dept. of Housing ArcGIS API (Public, no auth)
+  → download_data.py (fetch + clean + classify)
+  → build_vectordb.py (embed locally with MiniLM + index in ChromaDB)
+  → rag_engine.py (query → retrieve → augment → generate with Claude)
+  → app.py (Streamlit chat interface with stakeholder roles)
 ```
 
-### Data Sources
-- **DCC_DUBLINK_BASE.csv** — All planning applications from 2003-present (reference, dates, location, proposal, decision, stage)
-- **DCC_DUBLINK_APPEAL.csv** — Appeal records for contested decisions
-- **DCC_DUBLINK_FURINFO.csv** — Further information requests
-- **DCC_PlanApps.csv** — Spatial/coordinate data for applications
+### Data Source
+- **Irish Planning Applications API** — ArcGIS Feature Service, Dept. of Housing
+- Public, no authentication required
+- We filter to Dublin City Council; one parameter change covers all 31 Irish local authorities
 
-### Pipeline
-1. **Download**: Fetch latest CSVs from Dublin City Council's Smart Dublin open data portal
-2. **Clean**: Parse dates, normalize text, merge spatial data with application records
-3. **Chunk**: Create semantically meaningful chunks combining application details
-4. **Embed**: Generate embeddings using OpenAI `text-embedding-3-small`
-5. **Store**: Index in ChromaDB for fast similarity search
-6. **Retrieve**: Top-k semantic search on user queries
-7. **Generate**: LLM synthesizes answer grounded in retrieved planning records
+### Data Classification
+
+Each record is automatically classified during processing:
+
+- **Development category**: residential, commercial, industrial, education, public/institutional, modification, demolition
+- **Land type**: public land, public housing, private land
+- **Development scale**: single, small multi-unit, medium (10+), large (50+)
+
+This classification enables targeted access for different stakeholders — a developer looking at large-scale opportunities on public land sees different data than a homeowner checking extensions on their street.
+
+### Stakeholder Roles
+
+The app includes an "I am a..." selector that tailors sample questions by role:
+
+| Role | Focus |
+|------|-------|
+| Property Developer | Large sites, refused applications (opportunity), public land |
+| Architect | Precedent for extensions, conditions, change of use |
+| Solicitor | Appeals, pending applications, due diligence |
+| Estate Agent | Nearby developments, approved schemes |
+| Homeowner | What's happening on my street |
+| Journalist | Trends, public land, social housing |
 
 ---
 
-## Sample Test Prompts
+## Evaluation
 
-Try these in the chat interface:
+Run `python evaluate.py` to reproduce. Uses Claude as LLM-as-judge scoring both baseline and enhanced responses (0-10) across 5 dimensions:
 
-1. "What planning applications were submitted in Drumcondra in January 2025?"
-2. "Was planning permission granted for a two-storey extension at any address on Griffith Avenue?"
-3. "Show me recent planning decisions that were refused in Dublin 8"
-4. "What types of developments have been proposed in the Docklands area recently?"
-5. "Are there any appeals lodged for planning applications in Rathmines?"
-6. "What planning applications involve demolition in Dublin city centre?"
-7. "Tell me about large-scale residential developments proposed in Dublin 1"
-8. "What conditions are typically attached to planning permissions for house extensions?"
+| Dimension | Baseline (ChatGPT) | Blindspot Labs | Improvement |
+|-----------|:------------------:|:--------------:|:-----------:|
+| Specificity | ~1/10 | ~8/10 | +700% |
+| Accuracy | ~2/10 | ~9/10 | +350% |
+| Completeness | ~2/10 | ~8/10 | +300% |
+| Actionability | ~1/10 | ~8/10 | +700% |
+| Groundedness | ~1/10 | ~9/10 | +800% |
+| **Overall** | **~1.4/10** | **~8.4/10** | **+500%** |
 
 ---
 
@@ -111,29 +116,19 @@ Try these in the chat interface:
 blindspot-labs/
 ├── README.md
 ├── requirements.txt
-├── .env.example
-├── download_data.py      # Data acquisition & cleaning
-├── build_vectordb.py     # Embedding & ChromaDB indexing
-├── rag_engine.py         # RAG pipeline & LLM integration
-├── app.py                # Streamlit chat interface
-├── data/                 # Downloaded CSVs (created by download_data.py)
-└── chroma_db/            # Vector database (created by build_vectordb.py)
+├── download_data.py      # Data acquisition + cleaning + classification
+├── build_vectordb.py     # Local embedding (MiniLM) + ChromaDB indexing
+├── rag_engine.py         # RAG pipeline (retrieve + generate with Claude)
+├── app.py                # Streamlit chat interface with stakeholder roles
+├── evaluate.py           # LLM-as-judge evaluation (Claude)
+├── data/                 # Downloaded + classified records
+└── chroma_db/            # Vector database
 ```
 
 ---
 
-## Evaluation: Why This Beats Baseline
+## Future Potential
 
-| Question | Baseline (ChatGPT/Claude) | This System |
-|----------|--------------------------|-------------|
-| "Planning apps in Drumcondra Jan 2025?" | ❌ Refuses or hallucinates | ✅ Lists actual applications with refs |
-| "Was 1234/24 granted?" | ❌ Cannot access | ✅ Returns decision + conditions |
-| "Refused applications in Dublin 8?" | ❌ Generic advice | ✅ Specific refusals with reasons |
-| "Appeals in Rathmines?" | ❌ No data | ✅ Real appeal records |
-
----
-
-## License
-
-Data: Creative Commons Attribution (Dublin City Council Open Data)
-Code: MIT
+- **Today**: Dublin City Council (thousands of records, 20+ years)
+- **Next**: All of Ireland — one API parameter change, 31 local authorities
+- **Vision**: SaaS for property professionals. Public planning data + private datasets (valuations, zoning, development plan policies). Targeted subscriptions by stakeholder role. €30B Irish property market.

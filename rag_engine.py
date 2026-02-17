@@ -2,9 +2,9 @@
 rag_engine.py — Retrieval-Augmented Generation engine for planning queries
 
 Handles:
-1. Query embedding and semantic search against ChromaDB
+1. Query embedding and semantic search against ChromaDB (sentence-transformers, local)
 2. Context assembly from retrieved planning records
-3. LLM generation with grounded responses (OpenAI or Anthropic)
+3. LLM generation with grounded responses (Anthropic Claude)
 """
 
 import os
@@ -16,18 +16,14 @@ load_dotenv()
 # Also try Streamlit secrets (for cloud deployment)
 try:
     import streamlit as st
-    if "OPENAI_API_KEY" in st.secrets:
-        os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
     if "ANTHROPIC_API_KEY" in st.secrets:
         os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
-    if "LLM_PROVIDER" in st.secrets:
-        os.environ["LLM_PROVIDER"] = st.secrets["LLM_PROVIDER"]
 except Exception:
     pass
 
 CHROMA_DIR = Path("chroma_db")
 COLLECTION_NAME = "dublin_planning"
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 TOP_K = 10  # Number of results to retrieve
 
 # System prompt for the planning assistant
@@ -48,23 +44,18 @@ Remember: You are providing factual information from real public records. Be hel
 
 
 def get_collection():
-    """Get the ChromaDB collection."""
+    """Get the ChromaDB collection with sentence-transformer embeddings."""
     import chromadb
     from chromadb.utils import embedding_functions
     
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY not found in environment")
-    
-    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=api_key,
+    st_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=EMBEDDING_MODEL
     )
     
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     collection = client.get_collection(
         name=COLLECTION_NAME,
-        embedding_function=openai_ef
+        embedding_function=st_ef
     )
     
     return collection
@@ -114,42 +105,7 @@ def retrieve_context(query: str, collection=None, top_k: int = TOP_K) -> tuple[s
     return context_text, raw_results
 
 
-def generate_response_openai(query: str, context: str, chat_history: list = None) -> str:
-    """Generate response using OpenAI."""
-    from openai import OpenAI
-    
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
-    # Add chat history if provided
-    if chat_history:
-        for msg in chat_history[-6:]:  # Keep last 6 messages for context
-            messages.append(msg)
-    
-    # Create the user message with context
-    user_message = f"""Based on the following Dublin City Council planning records, please answer this question:
-
-**Question:** {query}
-
-**Retrieved Planning Records:**
-{context}
-
-Please provide a clear, accurate answer based on these records. Cite specific planning reference numbers where relevant."""
-    
-    messages.append({"role": "user", "content": user_message})
-    
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        temperature=0.1,
-        max_tokens=2000
-    )
-    
-    return response.choices[0].message.content
-
-
-def generate_response_anthropic(query: str, context: str, chat_history: list = None) -> str:
+def generate_response(query: str, context: str, chat_history: list = None) -> str:
     """Generate response using Anthropic Claude."""
     from anthropic import Anthropic
     
@@ -200,17 +156,10 @@ def query_planning(query: str, chat_history: list = None, collection=None) -> di
     # Retrieve relevant records
     context, raw_results = retrieve_context(query, collection=collection)
     
-    # Determine which LLM to use
-    provider = os.getenv("LLM_PROVIDER", "openai").lower()
-    
-    if provider == "anthropic":
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            raise ValueError("ANTHROPIC_API_KEY not found. Set it in .env or switch LLM_PROVIDER to openai.")
-        answer = generate_response_anthropic(query, context, chat_history)
-    else:
-        if not os.getenv("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY not found. Set it in .env.")
-        answer = generate_response_openai(query, context, chat_history)
+    # Generate with Claude
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise ValueError("ANTHROPIC_API_KEY not found. Set it in .env.")
+    answer = generate_response(query, context, chat_history)
     
     # Extract source references for citation
     sources = []
@@ -220,7 +169,10 @@ def query_planning(query: str, chat_history: list = None, collection=None) -> di
             "ref": meta.get('ref', 'Unknown'),
             "location": meta.get('location', 'Unknown'),
             "decision": meta.get('decision', 'Unknown'),
-            "relevance": f"{result['relevance']:.2f}"
+            "relevance": f"{result['relevance']:.2f}",
+            "dev_category": meta.get('dev_category', ''),
+            "land_type": meta.get('land_type', ''),
+            "dev_scale": meta.get('dev_scale', ''),
         })
     
     return {

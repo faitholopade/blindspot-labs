@@ -3,7 +3,7 @@ build_vectordb.py — Build ChromaDB vector database from processed planning rec
 
 Takes the cleaned JSON records and:
 1. Creates semantically meaningful text chunks for each application
-2. Generates embeddings using OpenAI text-embedding-3-small
+2. Generates embeddings using sentence-transformers (all-MiniLM-L6-v2) — local, free, no API key
 3. Stores everything in a local ChromaDB collection
 """
 
@@ -19,7 +19,7 @@ DATA_DIR = Path("data")
 CHROMA_DIR = Path("chroma_db")
 COLLECTION_NAME = "dublin_planning"
 BATCH_SIZE = 100  # ChromaDB batch size for adding documents
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Local model, no API key needed
 
 
 def create_document_text(record: dict) -> str:
@@ -91,6 +91,19 @@ def create_document_text(record: dict) -> str:
                 if appeal_text:
                     parts.append(f"Appeal {i+1}: {appeal_text}")
     
+    # Classification (public/private land, category, scale)
+    dev_cat = record.get('dev_category', '')
+    if dev_cat:
+        parts.append(f"Development Category: {dev_cat}")
+    
+    land_type = record.get('land_type', '')
+    if land_type:
+        parts.append(f"Land Type: {land_type}")
+    
+    dev_scale = record.get('dev_scale', '')
+    if dev_scale:
+        parts.append(f"Development Scale: {dev_scale}")
+    
     return "\n".join(parts)
 
 
@@ -106,6 +119,9 @@ def create_metadata(record: dict) -> dict:
         "stage": record.get('stage', ''),
         "has_appeal": str(record.get('has_appeal', False)),
         "proposal_short": record.get('proposal', '')[:500],
+        "dev_category": record.get('dev_category', ''),
+        "land_type": record.get('land_type', ''),
+        "dev_scale": record.get('dev_scale', ''),
     }
     
     # Add coordinates if available
@@ -125,13 +141,7 @@ def create_metadata(record: dict) -> dict:
 def build_vector_database():
     """Main function to build the ChromaDB vector database."""
     
-    # Check for API key
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("  ✗ OPENAI_API_KEY not found in .env file")
-        print("    OpenAI API key is required for generating embeddings.")
-        print("    Create a .env file with: OPENAI_API_KEY=sk-your-key-here")
-        sys.exit(1)
+    # No API key needed for embeddings — using local model
     
     # Load processed records
     records_path = DATA_DIR / "processed_records.json"
@@ -148,10 +158,10 @@ def build_vector_database():
     import chromadb
     from chromadb.utils import embedding_functions
     
-    # Set up OpenAI embedding function
+    # Set up sentence-transformers embedding function (local, free)
     print(f"  Setting up embeddings ({EMBEDDING_MODEL})...")
-    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=api_key,
+    print(f"    (Local model — no API key required)")
+    st_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=EMBEDDING_MODEL
     )
     
@@ -170,7 +180,7 @@ def build_vector_database():
     
     collection = client.create_collection(
         name=COLLECTION_NAME,
-        embedding_function=openai_ef,
+        embedding_function=st_ef,
         metadata={"description": "Dublin City Council Planning Applications"}
     )
     print(f"    Created collection '{COLLECTION_NAME}'")
